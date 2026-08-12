@@ -1,0 +1,27 @@
+# Raw data (download separately — see README)
+data/*.csv
+!data/.gitkeep
+
+# Generated warehouse
+db/*.duckdb
+!db/.gitkeep
+
+# Trained model artifacts
+models/*.pkl
+models/*.json
+models/*.joblib
+!models/.gitkeep
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
