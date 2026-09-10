@@ -1,0 +1,30 @@
+name: DemandIQ anomaly check
+
+# NOTE: the Instacart CSVs are gitignored (licensed Kaggle data, too large
+# and not ours to redistribute), so this workflow assumes db/demandiq.duckdb
+# already exists -- built once locally via `python ingest.py && python
+# features.py && python forecaster.py && python anomaly.py` and committed,
+# or restored from a cache/artifact step. It re-runs the recurring anomaly
+# check against that warehouse rather than rebuilding it from raw data
+# every time.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  check-anomalies:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run anomaly check and notify
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python -m scheduler.monitor

@@ -89,8 +89,8 @@ Deploy an autonomous reasoning agent capable of investigating forecast anomalies
 
 ### LLM Inference & Framework Selection
 
-* **Framework**: LangChain configured with the **ReAct (Reason + Act)** loop paradigm.
-* **LLM Engine**: **Groq LLaMA 3**. Selected Groq's LPU hardware acceleration to keep tool invocation latency sub-second (~500 tokens/sec), ensuring smooth interaction during live chat sessions.
+* **Framework**: **LangGraph's `create_react_agent`** (LangChain's tool-calling primitives underneath) rather than a hand-rolled ReAct loop -- it's the maintained, standard implementation of reason -> call-a-tool -> observe, so there's no bespoke loop-control code to debug.
+* **LLM Engine**: **Groq-hosted open-weight model** (currently `openai/gpt-oss-20b` -- Groq deprecates and retires models on a rolling schedule, see `console.groq.com/docs/deprecations`; the original choice, Llama 3.1 8B Instant, was itself retired 2026-08-16, which is exactly why the model ID lives in one place, `agent/agent.py::DEFAULT_MODEL`, instead of being hardcoded in multiple files). Selected Groq's LPU hardware acceleration to keep tool invocation latency sub-second, ensuring smooth interaction during live chat sessions.
 
 ### Custom Tool Boundaries
 
@@ -114,7 +114,7 @@ Deploy the system to a cloud environment with background anomaly monitoring and 
 * *Limitation*: Streamlit Cloud puts idle apps to sleep, which would pause background scheduler threads when no user actively holds the webpage open.
 * *Production Solution*: Offloaded scheduled anomaly checks to a **GitHub Actions Cron Workflow**. The workflow runs independently on a defined schedule, executes `anomaly.py`, triggers the agent on `HIGH` severity anomalies, and posts alerts to a designated **Slack Webhook**.
 
-### Live Cloud Hosting
+### Cloud Hosting Path
 
-* Deployed the dashboard to **Streamlit Community Cloud** synced directly to the primary GitHub branch.
-* Environment secrets (`GROQ_API_KEY`, `SLACK_WEBHOOK_URL`) were securely injected via Streamlit Cloud Secrets Management.
+* The dashboard runs locally today (`streamlit run dashboard/app.py`); it hasn't been pushed to Streamlit Community Cloud yet.
+* The path to do that is short because nothing in `dashboard/app.py` assumes a local filesystem beyond the DuckDB file: connect the GitHub repo in Streamlit Community Cloud, point it at `dashboard/app.py`, and set `GROQ_API_KEY` / `SLACK_WEBHOOK_URL` via Streamlit Cloud's Secrets Management instead of a local `.env`. The one real risk is build time -- `prophet`'s C++ toolchain dependency (`cmdstanpy`) is the one package in `requirements.txt` that can be slow or flaky on a fresh cloud build; see the Prophet installation note in README.md.

@@ -12,7 +12,7 @@ In grocery e-commerce (companies like Picnic, Zalando, and Delivery Hero), suppl
 
 1. **Warehouse & Data Engineering**: Ingests and transforms 3.4M+ raw order records into an in-process, high-performance columnar DuckDB star schema.
 2. **Predictive Analytics**: Reconstructs realistic consumer purchase timelines and trains department-level forecasting models (Prophet vs. XGBoost) to predict daily demand.
-3. **Agentic Intelligence**: Deploys a **LangChain ReAct Agent** powered by **Groq LLaMA 3** that autonomously monitors forecast deviations, queries the SQL warehouse using custom tools to diagnose root causes, and drafts executive business reports.
+3. **Agentic Intelligence**: Deploys a **LangGraph ReAct agent** (LangChain's tool-calling primitives underneath) powered by a **Groq-hosted open-weight model** that autonomously monitors forecast deviations, queries the SQL warehouse using custom tools to diagnose root causes, and drafts executive business reports.
 4. **Automated Alerting**: Continuously runs background monitoring loops to fire real-time push notifications to operational Slack channels without human intervention.
 
 ---
@@ -37,7 +37,7 @@ flowchart TD
 
     subgraph Autonomous Layer ["3. Agentic & Automation Core"]
         E -->|anomaly.py| F[Anomaly Detector\nZ-Score & % Thresholds]
-        F -->|Trigger on Anomaly| G[LangChain ReAct Agent\nGroq LLaMA 3]
+        F -->|Trigger on Anomaly| G[LangGraph ReAct Agent\nGroq-hosted LLM]
         
         subgraph Tool Matrix ["Custom LangChain Tools"]
             T1[run_sql_query]
@@ -117,13 +117,13 @@ Evaluates multiple machine learning strategies per department:
 
 ### 6. Autonomous Anomaly Detection (`anomaly.py`)
 
-* Compares actual demand vs. model forecasts in real time.
-* Flags deviations exceeding standard statistical thresholds (e.g., >20% forecast deviation or Z-score > 2.0).
+* Compares actual demand vs. model forecasts for every evaluated day.
+* Flags deviations using fixed percentage-of-forecast thresholds: **<15% → LOW**, **15–25% → MEDIUM**, **>25% → HIGH** (see `anomaly.py`; these are simple heuristic cutoffs, not a statistically calibrated per-department noise model -- see Limitations below).
 * Assigns risk severity levels (`LOW`, `MEDIUM`, `HIGH`) to prioritize agent investigation.
 
 ### 7. Agentic AI & Custom Tool Use (`agent/`)
 
-Architected using **LangChain** and **Groq LLaMA 3** using the **ReAct (Reason + Act)** framework. The agent is provided 3 custom tools:
+Architected using **LangGraph's `create_react_agent`** (LangChain's tool-calling primitives underneath) on a **Groq-hosted model** using the **ReAct (Reason + Act)** loop. The agent is provided 3 custom tools:
 
 1. `run_sql_query`: Executes direct SQL against DuckDB to inspect underlying order logs, user reorder behavior, and product trends.
 2. `get_forecast_delta`: Queries the forecasting engine for specific category deviation percentages and historical baselines.
@@ -131,17 +131,17 @@ Architected using **LangChain** and **Groq LLaMA 3** using the **ReAct (Reason +
 
 ### 8. Background Automation & Alerting (`scheduler/` & GitHub Actions)
 
-* Runs an automated background loop (via GitHub Actions Cron or APScheduler).
-* When a `HIGH` severity anomaly is detected, the pipeline automatically triggers the LangChain agent to investigate and dispatches a formatted alert report directly to a **Slack Webhook**.
+* Runs on a **GitHub Actions Cron schedule** (`.github/workflows/anomaly-check.yml`), not an in-process scheduler like APScheduler -- an in-process scheduler dies whenever the host app sleeps or restarts, which defeats the point of "runs on a schedule." See BUILD_LOG.md, Module 5, for the full trade-off.
+* When a `HIGH` severity anomaly is detected, the pipeline automatically triggers the agent to investigate that department and dispatches a formatted alert report directly to a **Slack Webhook**. If the agent call itself fails (bad key, rate limit, network blip), that department gets a plain "investigation failed, check manually" alert instead of silently dropping it or crashing the whole run -- see `scheduler/monitor.py`.
 
-### 9. Multi-Page BI Dashboard (`dashboard/app.py`)
+### 9. Single-Page BI Dashboard (`dashboard/app.py`)
 
-An interactive **Streamlit** multi-page application:
+A single-file **Streamlit** application (one `st.tabs()` layout, not Streamlit's file-based multi-page navigation -- see Project Structure below, there's no `pages/` directory):
 
-* **Page 1: Executive KPI Overview**: Top metrics, active alerts, and overall warehouse demand volume.
-* **Page 2: Interactive SQL Explorer**: Executes pre-built analytics queries with auto-rendering data charts and custom SQL box.
-* **Page 3: Demand Forecast Viewer**: Displays actuals vs. predictions, model evaluation metrics, and anomaly flags.
-* **Page 4: Conversational AI Agent**: Natural language chat interface with live expander views showing the agent's internal tool calls and reasoning trace.
+* **Tab 1: Overview**: Top-line KPIs, department volume share, and current anomaly status color-coded by severity.
+* **Tab 2: SQL Explorer**: Runs any of the saved `sql/*.sql` queries, or your own, against the warehouse -- read-only SELECT/WITH only, enforced by the same guard the agent's own SQL tool uses (`agent/tools.py::is_select_only`).
+* **Tab 3: Forecasts**: Prophet vs. XGBoost leaderboard, plus actual-vs-forecast charted per department over the hold-out period.
+* **Tab 4: Agent Chat**: Natural-language chat with the LangGraph agent, with an expander under each answer showing the actual tool calls and their results -- not a simulated trace, the real `messages` list LangGraph returns.
 
 ---
 
@@ -238,6 +238,17 @@ DemandIQ/
 
 ---
 
+## ⚠️ Limitations
+
+Stated up front, not discovered the hard way in an interview:
+
+* **Reconstructed dates are a modeling assumption, not ground truth.** Instacart's public dataset never releases real calendar dates -- only `order_dow`, `order_hour_of_day`, and `days_since_prior_order` (the gap since that user's previous order). `features.py` assigns each user a random anchor date and then walks forward through their *real* gap-day values, which preserves genuine purchase-interval and weekly-seasonality signal, but any absolute date (or any pattern that depends on many users sharing a real calendar date, e.g. a holiday spike) is a simulation artifact, not something actually observed in the data.
+* **Anomaly thresholds are fixed heuristics, not statistically calibrated.** `anomaly.py` flags a day as HIGH once it deviates more than 25% from forecast, MEDIUM above 15%, regardless of how volatile that department normally is. A department with naturally noisy demand will trip HIGH more often than one that's already stable near the threshold -- the thresholds aren't adaptive per department. A natural next step would be flagging deviations in standard-deviations-from-historical-noise rather than a flat percentage.
+* **Percentage-based deviation is unstable at low volume.** For a department with only a handful of orders on a given day, a swing from 1 unit to 3 units is a "200% deviation" that means very little in absolute terms. This shows up most at the start/end of the reconstructed date range (thin lag/rolling windows) and for lower-volume departments generally -- worth knowing before reading too much into a single HIGH flag on a quiet day.
+* **Forecasting is department-level, not SKU-level** (see Key Architectural Trade-offs above) -- a deliberate scope choice for signal-to-noise reasons, not an oversight, but it means the system answers "is Produce trending off?" rather than "is this specific SKU about to stock out?".
+
+---
+
 ## ⚙️ Setup & Installation
 
 ### 1. Prerequisites & Environment Setup
@@ -316,8 +327,8 @@ streamlit run dashboard/app.py
 | **Data Warehouse** | DuckDB (Embedded Columnar OLAP) |
 | **Data Processing & SQL** | Python, Pandas, NumPy, SQL |
 | **Machine Learning** | Prophet, XGBoost, Scikit-Learn |
-| **Agentic AI** | LangChain, Groq (LLaMA 3 LPU Hardware Acceleration) |
-| **Automation & Alerts** | GitHub Actions, APScheduler, Slack Webhooks |
+| **Agentic AI** | LangChain + LangGraph (`create_react_agent`), Groq (LPU-hosted open-weight models) |
+| **Automation & Alerts** | GitHub Actions (Cron), Slack Webhooks |
 | **UI & Visualization** | Streamlit, Plotly |
 
 ---
