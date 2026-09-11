@@ -20,8 +20,10 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv()  # must run before any os.environ.get("GROQ_API_KEY") check below
 
 from agent.tools import is_select_only  # noqa: E402
 
@@ -116,7 +118,7 @@ with tab_overview:
         )
 
         def _highlight(row):
-            color = {"HIGH": "#f8d7da", "MEDIUM": "#fff3cd", "LOW": "#d4edda"}.get(row["severity"], "")
+            color = {"HIGH": "#a8000f", "MEDIUM": "#fff3cd", "LOW": "#d4edda"}.get(row["severity"], "")
             return [f"background-color: {color}"] * len(row)
 
         st.dataframe(latest.style.apply(_highlight, axis=1), width='stretch')
