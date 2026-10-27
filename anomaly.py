@@ -17,7 +17,9 @@ import os
 import duckdb
 import pandas as pd
 
-DB_PATH = os.path.join("db", "demandiq.duckdb")
+# DEMANDIQ_DB_PATH lets CI point at the small committed snapshot,
+# db/demandiq_demo.duckdb, instead of the full local warehouse.
+DB_PATH = os.environ.get("DEMANDIQ_DB_PATH", os.path.join("db", "demandiq.duckdb"))
 HIGH_THRESHOLD = 25.0
 MEDIUM_THRESHOLD = 15.0
 

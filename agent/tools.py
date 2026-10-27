@@ -17,7 +17,10 @@ import re
 import duckdb
 from langchain_core.tools import tool
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "db", "demandiq.duckdb")
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# DEMANDIQ_DB_PATH may be relative (resolved against the project root) or
+# absolute (os.path.join discards _ROOT). CI sets it to the committed snapshot.
+DB_PATH = os.path.join(_ROOT, os.environ.get("DEMANDIQ_DB_PATH", os.path.join("db", "demandiq.duckdb")))
 
 # Matches a run of leading whitespace, "-- line comments", and /* block
 # comments */ -- anything that can legally precede real SQL. Every file in
@@ -40,6 +43,25 @@ def _connect() -> duckdb.DuckDBPyConnection:
     return duckdb.connect(DB_PATH, read_only=True)
 
 
+def _available_tables_hint() -> str:
+    """Appended to 'table does not exist' errors so the agent can correct
+    itself. The scheduled job runs against a lightweight snapshot that holds
+    pre-aggregated tables (no raw order rows), so the table a query expects may
+    legitimately be absent there -- the agent should be told what *is* there
+    rather than guess again."""
+    try:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT table_name FROM information_schema.tables ORDER BY table_name"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 -- a hint is best-effort, never the failure itself
+        return ""
+    return " Available tables: " + ", ".join(r[0] for r in rows) + "."
+
+
 @tool
 def run_sql_query(query: str) -> str:
     """Run a read-only SQL SELECT query against the DemandIQ DuckDB warehouse
@@ -54,7 +76,8 @@ def run_sql_query(query: str) -> str:
         result = conn.execute(query).df()
         conn.close()
     except Exception as exc:  # noqa: BLE001 -- surfaced to the agent, not the user
-        return f"Query failed: {exc}"
+        hint = _available_tables_hint() if "does not exist" in str(exc) else ""
+        return f"Query failed: {exc}{hint}"
     if result.empty:
         return "Query returned no rows."
     return result.head(25).to_string(index=False)

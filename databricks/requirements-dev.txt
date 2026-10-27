@@ -1,0 +1,14 @@
+# Local tests and CI for the Databricks module (not needed on Databricks itself).
+# Versions mirror serverless environment 4 where it matters (Spark 4.0, pandas 2.2,
+# scikit-learn 1.6, mlflow-skinny 2.22) so a green test run means the same code
+# runs on the job's compute.
+pyspark[connect]==4.0.1   # [connect]: run the tests over Spark Connect, like serverless
+delta-spark==4.0.0
+pandas==2.2.3
+numpy==2.1.3
+pyarrow==19.0.1
+scikit-learn==1.6.1
+mlflow-skinny==2.22.0
+xgboost>=2.1,<4
+pytest>=8,<10
+ruff>=0.15,<1

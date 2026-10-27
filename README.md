@@ -133,6 +133,7 @@ Architected using **LangGraph's `create_react_agent`** (LangChain's tool-calling
 
 * Runs on a **GitHub Actions Cron schedule** (`.github/workflows/anomaly-check.yml`), not an in-process scheduler like APScheduler -- an in-process scheduler dies whenever the host app sleeps or restarts, which defeats the point of "runs on a schedule." See BUILD_LOG.md, Module 5, for the full trade-off.
 * When a `HIGH` severity anomaly is detected, the pipeline automatically triggers the agent to investigate that department and dispatches a formatted alert report directly to a **Slack Webhook**. If the agent call itself fails (bad key, rate limit, network blip), that department gets a plain "investigation failed, check manually" alert instead of silently dropping it or crashing the whole run -- see `scheduler/monitor.py`.
+* **What the scheduled job scans:** the full warehouse (`db/demandiq.duckdb`) is gitignored -- it's built from the Instacart CSVs, which are third-party licensed data (not ours to redistribute) and far too large to commit -- so a fresh GitHub Actions checkout doesn't have it. The workflow runs against `db/demandiq_demo.duckdb` instead (selected with the `DEMANDIQ_DB_PATH` environment variable): a small snapshot of *derived aggregates only* (forecast evaluation, daily department features, and the output of the `sql/*.sql` queries -- no order-level rows), built by `scripts/build_demo_snapshot.py` and committed. `scheduler/monitor.py` checks the warehouse before scanning it and stops with a readable message if it's missing or empty, rather than failing deep inside the scan. Refresh the snapshot after re-running the pipeline (Setup, step 6).
 
 ### 9. Single-Page BI Dashboard (`dashboard/app.py`)
 
@@ -150,7 +151,8 @@ A single-file **Streamlit** application (one `st.tabs()` layout, not Streamlit's
 ```
 DemandIQ/
 ├── data/                       # Raw Instacart CSV files (gitignored)
-├── db/                         # DuckDB analytical warehouse (demandiq.duckdb)
+├── db/                         # DuckDB warehouse: demandiq.duckdb (gitignored) and the
+│                               #   small committed CI snapshot, demandiq_demo.duckdb
 ├── models/                     # Trained Prophet & XGBoost model artifacts
 ├── agent/                      # LangChain ReAct agent & tool definitions
 │   ├── tools.py                # Custom LangChain tools (SQL, Forecast, Report)
@@ -159,6 +161,10 @@ DemandIQ/
 │   └── app.py                  # Main dashboard launcher
 ├── scheduler/                  # Background automation tasks
 │   └── monitor.py              # Anomaly detection & Slack alert runner
+├── scripts/
+│   └── build_demo_snapshot.py  # Builds the aggregates-only snapshot the CI job scans
+├── .github/workflows/
+│   └── anomaly-check.yml       # Daily cron: runs scheduler/monitor.py on the snapshot
 ├── sql/                        # Warehouse SQL analytics queries
 │   ├── reorder_rate_by_department.sql
 │   ├── peak_order_hours.sql
@@ -173,6 +179,7 @@ DemandIQ/
 ├── forecaster.py               # Model training tournament & evaluator
 ├── anomaly.py                  # Anomaly detection engine
 ├── requirements.txt            # Project dependencies
+├── requirements-monitor.txt    # The shorter list the scheduled CI job installs
 ├── .env.example                # Environment variable template
 ├── BUILD_LOG.md                # Engineering build log & technical decisions
 └── README.md                   # System documentation
@@ -240,12 +247,13 @@ DemandIQ/
 
 ## ⚠️ Limitations
 
-Stated up front, not discovered the hard way in an interview:
+Known limits of the current design:
 
 * **Reconstructed dates are a modeling assumption, not ground truth.** Instacart's public dataset never releases real calendar dates -- only `order_dow`, `order_hour_of_day`, and `days_since_prior_order` (the gap since that user's previous order). `features.py` assigns each user a random anchor date and then walks forward through their *real* gap-day values, which preserves genuine purchase-interval and weekly-seasonality signal, but any absolute date (or any pattern that depends on many users sharing a real calendar date, e.g. a holiday spike) is a simulation artifact, not something actually observed in the data.
 * **Anomaly thresholds are fixed heuristics, not statistically calibrated.** `anomaly.py` flags a day as HIGH once it deviates more than 25% from forecast, MEDIUM above 15%, regardless of how volatile that department normally is. A department with naturally noisy demand will trip HIGH more often than one that's already stable near the threshold -- the thresholds aren't adaptive per department. A natural next step would be flagging deviations in standard-deviations-from-historical-noise rather than a flat percentage.
 * **Percentage-based deviation is unstable at low volume.** For a department with only a handful of orders on a given day, a swing from 1 unit to 3 units is a "200% deviation" that means very little in absolute terms. This shows up most at the start/end of the reconstructed date range (thin lag/rolling windows) and for lower-volume departments generally -- worth knowing before reading too much into a single HIGH flag on a quiet day.
 * **Forecasting is department-level, not SKU-level** (see Key Architectural Trade-offs above) -- a deliberate scope choice for signal-to-noise reasons, not an oversight, but it means the system answers "is Produce trending off?" rather than "is this specific SKU about to stock out?".
+* **The scheduled job re-scans a static snapshot, not live demand.** The Instacart data is a fixed historical dataset, and the GitHub Actions job runs on a committed snapshot of its derived aggregates (see section 8), so each run evaluates the same hold-out period and raises the same alerts. It demonstrates the automation path end to end (schedule -> scan -> agent investigation -> Slack), not monitoring of a live data feed; pointing it at one would mean replacing the snapshot with a feed that updates between runs.
 
 ---
 
@@ -308,7 +316,15 @@ python anomaly.py
 # Step 5: Launch Streamlit Dashboard
 streamlit run dashboard/app.py
 
+# Step 6 (optional): refresh the small snapshot the scheduled GitHub Actions job scans
+python scripts/build_demo_snapshot.py
+git add db/demandiq_demo.duckdb && git commit -m "Refresh demo snapshot" && git push
+
 ```
+
+For the scheduled workflow, also add `GROQ_API_KEY` (and optionally `SLACK_WEBHOOK_URL`) under the repository's Settings -> Secrets and variables -> Actions.
+
+If you run `python -m scheduler.monitor` locally against the snapshot (`DEMANDIQ_DB_PATH=db/demandiq_demo.duckdb`, set in the shell -- not in `.env`), it rewrites the snapshot's `anomaly_scan` table; run `git checkout db/demandiq_demo.duckdb` afterwards so that change isn't committed.
 
 ---
 
@@ -317,6 +333,14 @@ streamlit run dashboard/app.py
 * **Warehouse Assertions**: `ingest.py` runs validation functions testing primary key uniqueness, foreign key orphan checks, and non-null constraints.
 * **Feature Validation**: `features.py` enforces temporal continuity and verifies that rolling window aggregations contain no dangling NaN values.
 * **Agent Trace Auditing**: Streamlit's interface exposes full ReAct thought-action-observation cycles, allowing verification of tool selection logic.
+
+---
+
+## 🧱 Databricks Lakehouse Version
+
+The same pipeline also runs on Databricks as a scheduled lakehouse job: raw CSVs land in bronze Delta tables, are typed, de-duplicated and validated in silver (bad rows go to a quarantine table), pass a data-quality gate (24 checks, errors stop the run), and become gold tables (the 8 SQL analyses, daily department demand, KPIs). A final task trains an XGBoost forecaster against a seasonal-naive baseline, logs it to MLflow and registers it in Unity Catalog, and writes forecast-vs-actual anomalies. Results show on an AI/BI dashboard. Everything is deployed as code with a Declarative Automation Bundle, and a GitHub Actions workflow lints and tests it.
+
+Full guide: [databricks/README.md](databricks/README.md)
 
 ---
 
@@ -329,6 +353,7 @@ streamlit run dashboard/app.py
 | **Machine Learning** | Prophet, XGBoost, Scikit-Learn |
 | **Agentic AI** | LangChain + LangGraph (`create_react_agent`), Groq (LPU-hosted open-weight models) |
 | **Automation & Alerts** | GitHub Actions (Cron), Slack Webhooks |
+| **Lakehouse (Databricks)** | Delta Lake medallion (bronze/silver/gold), Databricks Jobs, Unity Catalog, MLflow, AI/BI dashboard, Declarative Automation Bundles |
 | **UI & Visualization** | Streamlit, Plotly |
 
 ---

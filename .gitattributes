@@ -1,0 +1,2 @@
+# Never touch line endings (or anything else) in the committed DuckDB snapshot.
+*.duckdb binary

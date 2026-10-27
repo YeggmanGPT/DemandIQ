@@ -1,0 +1,114 @@
+# The scheduled pipeline: bronze -> silver -> quality gate -> gold -> forecast.
+# Every task runs src/run_task.py on serverless compute; the task order is
+# the dependency chain, so gold is never rebuilt if the quality gate fails.
+resources:
+  jobs:
+    demandiq_pipeline:
+      name: demandiq_lakehouse_pipeline
+      description: >-
+        DemandIQ medallion pipeline on the Instacart dataset: raw CSVs to bronze,
+        cleaned silver with quarantine, data-quality gate, gold business tables,
+        then MLflow-tracked demand forecasting and anomaly flags.
+      tags:
+        project: demandiq
+      max_concurrent_runs: 1
+      timeout_seconds: 7200
+      queue:
+        enabled: true
+
+      # Mondays 06:00 Berlin time. Weekly keeps Free Edition's daily compute
+      # quota free for other work; switch to "0 0 6 * * ?" for daily.
+      # pause_status is left unset on purpose: prod runs on schedule, and
+      # the dev target pauses it automatically (development mode).
+      schedule:
+        quartz_cron_expression: "0 0 6 ? * MON"
+        timezone_id: Europe/Berlin
+
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+
+      tasks:
+        - task_key: bronze_ingest
+          description: Land the six raw CSVs from the landing volume as bronze tables (all columns STRING).
+          environment_key: default
+          max_retries: 1
+          min_retry_interval_millis: 60000
+          timeout_seconds: 1800
+          spark_python_task:
+            python_file: ../src/run_task.py
+            parameters:
+              - --task=bronze
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --landing-path=${var.landing_path}
+              - --run-id={{job.run_id}}
+
+        - task_key: silver_transform
+          description: Type, de-duplicate and join; quarantine rows that break a rule.
+          depends_on:
+            - task_key: bronze_ingest
+          environment_key: default
+          timeout_seconds: 3600
+          spark_python_task:
+            python_file: ../src/run_task.py
+            parameters:
+              - --task=silver
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --run-id={{job.run_id}}
+
+        - task_key: quality_gate
+          description: Table-level checks on silver; a failed error-level check stops the run here.
+          depends_on:
+            - task_key: silver_transform
+          environment_key: default
+          timeout_seconds: 1800
+          spark_python_task:
+            python_file: ../src/run_task.py
+            parameters:
+              - --task=quality
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --min-orders=${var.min_orders}
+              - --run-id={{job.run_id}}
+
+        - task_key: gold_build
+          description: Business tables for the dashboard and the forecaster, then gold-level checks.
+          depends_on:
+            - task_key: quality_gate
+          environment_key: default
+          timeout_seconds: 1800
+          spark_python_task:
+            python_file: ../src/run_task.py
+            parameters:
+              - --task=gold
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --run-id={{job.run_id}}
+
+        - task_key: forecast_and_anomalies
+          description: XGBoost vs seasonal-naive on a 21-day hold-out, logged to MLflow; writes anomaly flags.
+          depends_on:
+            - task_key: gold_build
+          environment_key: ml
+          timeout_seconds: 1800
+          spark_python_task:
+            python_file: ../src/run_task.py
+            parameters:
+              - --task=forecast
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --experiment-path=/Users/${workspace.current_user.userName}/demandiq_forecasting_${bundle.target}
+              - --register-model=true
+              - --run-id={{job.run_id}}
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+        - environment_key: ml
+          spec:
+            environment_version: "4"
+            dependencies:
+              - xgboost>=2.1,<4

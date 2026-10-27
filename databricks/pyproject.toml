@@ -1,0 +1,21 @@
+[project]
+name = "demandiq-lakehouse"
+version = "0.1.0"
+description = "DemandIQ on Databricks: medallion Delta tables, quality gate, MLflow forecasting"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["demandiq_lakehouse", "run_task", "synthetic", "conftest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = ["ignore::DeprecationWarning", "ignore::UserWarning", "ignore::FutureWarning"]

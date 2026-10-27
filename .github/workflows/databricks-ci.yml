@@ -1,0 +1,101 @@
+name: DemandIQ Databricks CI/CD
+
+# Tests the PySpark pipeline on every change to the Databricks module, then
+# deploys the bundle (job + schedule + dashboard) to the prod target from
+# the default branch. Deploy is skipped, not failed, until the two
+# repository secrets exist: DATABRICKS_HOST and DATABRICKS_TOKEN.
+
+"on":
+  pull_request:
+    paths:
+      - "databricks/**"
+      - "sql/**"
+      - ".github/workflows/databricks-ci.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "databricks/**"
+      - "sql/**"
+      - ".github/workflows/databricks-ci.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: databricks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # delta: classic Spark with real Delta tables (CHECK constraints included)
+    # spark-connect: the same suite over Spark Connect, the protocol serverless uses
+    name: Lint and test (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [delta, spark-connect]
+    defaults:
+      run:
+        working-directory: databricks
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: databricks/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit, parity and end-to-end tests
+        env:
+          DEMANDIQ_TEST_DELTA: ${{ matrix.mode == 'delta' && '1' || '0' }}
+          DEMANDIQ_TEST_CONNECT: ${{ matrix.mode == 'spark-connect' && '1' || '0' }}
+        run: python -m pytest -q
+
+  deploy:
+    name: Validate and deploy bundle (prod)
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    defaults:
+      run:
+        working-directory: databricks
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Skip note
+        if: env.DATABRICKS_HOST == '' || env.DATABRICKS_TOKEN == ''
+        run: >-
+          echo "::notice title=Deploy skipped::Add the DATABRICKS_HOST and DATABRICKS_TOKEN
+          repository secrets to deploy the bundle from CI."
+
+      - uses: databricks/setup-cli@v1.21.0
+        if: env.DATABRICKS_HOST != '' && env.DATABRICKS_TOKEN != ''
+
+      - name: Validate bundle
+        if: env.DATABRICKS_HOST != '' && env.DATABRICKS_TOKEN != ''
+        run: databricks bundle validate -t prod
+
+      - name: Deploy bundle
+        if: >-
+          env.DATABRICKS_HOST != '' && env.DATABRICKS_TOKEN != '' &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: databricks bundle deploy -t prod --auto-approve

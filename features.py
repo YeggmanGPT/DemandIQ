@@ -21,8 +21,7 @@ order to the same calendar day, which would fake a massive demand
 spike on day one of the simulation.
 
 This is a documented modeling assumption, not a reconstruction of
-ground truth. Say exactly this if it comes up in an interview -- see
-README.md -> Limitations for the paragraph version.
+ground truth -- see README.md -> Limitations for the paragraph version.
 
 Run from the project root, after ingest.py:
     python features.py

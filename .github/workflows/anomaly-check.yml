@@ -1,30 +1,50 @@
 name: DemandIQ anomaly check
 
-# NOTE: the Instacart CSVs are gitignored (licensed Kaggle data, too large
-# and not ours to redistribute), so this workflow assumes db/demandiq.duckdb
-# already exists -- built once locally via `python ingest.py && python
-# features.py && python forecaster.py && python anomaly.py` and committed,
-# or restored from a cache/artifact step. It re-runs the recurring anomaly
-# check against that warehouse rather than rebuilding it from raw data
-# every time.
+# What this job scans
+# -------------------
+# The full warehouse (db/demandiq.duckdb) is gitignored: it is built from the
+# Instacart CSVs, which are third-party licensed data (not ours to redistribute)
+# and far too large to commit. A fresh checkout therefore has no warehouse, so
+# this job scans db/demandiq_demo.duckdb instead -- a small snapshot of derived
+# aggregates only (no order-level rows) that IS committed to the repo.
+#
+# To refresh the snapshot after re-running the pipeline locally:
+#   python ingest.py && python features.py && python forecaster.py && python anomaly.py
+#   python scripts/build_demo_snapshot.py
+#   git add db/demandiq_demo.duckdb && git commit -m "Refresh demo snapshot" && git push
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   GROQ_API_KEY       the agent's written investigation needs it; without it the alert
+#                      still goes out, as a plain "investigation failed" message.
+#   SLACK_WEBHOOK_URL  optional; without it each report is printed in this log instead.
 
 on:
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   check-anomalies:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest, which moves to Ubuntu 26 on 2026-10-19.
+    # Move to a newer image on purpose, after a test run.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-monitor.txt
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-monitor.txt
       - name: Run anomaly check and notify
         env:
+          DEMANDIQ_DB_PATH: db/demandiq_demo.duckdb
+          PYTHONUNBUFFERED: "1"  # log lines appear as they happen, not when the process exits
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: python -m scheduler.monitor

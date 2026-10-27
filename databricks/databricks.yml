@@ -1,0 +1,52 @@
+# DemandIQ lakehouse on Databricks.
+# Declarative Automation Bundle (formerly "Databricks Asset Bundle"):
+# the job, its schedule and the dashboard are defined here as code and
+# deployed with `databricks bundle deploy -t <target>`.
+bundle:
+  name: demandiq_lakehouse
+
+include:
+  - resources/*.yml
+
+# Only the job code and the dashboard need to be in the workspace
+# (anything in .gitignore is skipped as well).
+sync:
+  exclude:
+    - tests/
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for all DemandIQ schemas. Free Edition ships with "workspace".
+    default: workspace
+  schema_prefix:
+    description: Prefix for the bronze/silver/gold schemas, e.g. demandiq_ -> demandiq_bronze.
+    default: demandiq_
+  landing_path:
+    description: Unity Catalog volume folder holding the six raw Instacart CSVs.
+    default: /Volumes/workspace/demandiq_landing/raw/instacart
+  min_orders:
+    description: Quality gate - fewer cleaned orders than this fails the run (full dataset has ~3.4M).
+    default: "3000000"
+  warehouse_id:
+    description: SQL warehouse the dashboard queries run on.
+    lookup:
+      warehouse: "Serverless Starter Warehouse"
+
+targets:
+  # For trying changes: job name gets a "[dev <you>]" prefix, the schedule
+  # is paused, and tables go to demandiq_dev_bronze/silver/gold.
+  dev:
+    mode: development
+    default: true
+    variables:
+      schema_prefix: demandiq_dev_
+
+  # The real thing: scheduled, tables in demandiq_bronze/silver/gold.
+  # This is what the GitHub Actions workflow deploys on every push to main.
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE

@@ -4,7 +4,11 @@ data/*.csv
 
 # Generated warehouse
 db/*.duckdb
+db/*.wal
 !db/.gitkeep
+# ...except the small, aggregates-only snapshot the scheduled CI job runs on
+# (built by scripts/build_demo_snapshot.py)
+!db/demandiq_demo.duckdb
 
 # Trained model artifacts
 models/*.pkl

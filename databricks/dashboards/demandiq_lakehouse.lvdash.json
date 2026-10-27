@@ -1,0 +1,2531 @@
+{
+  "datasets": [
+    {
+      "name": "overview",
+      "displayName": "Overview KPIs",
+      "queryLines": [
+        "SELECT * FROM overview_kpis"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "dept_kpis",
+      "displayName": "Department KPIs",
+      "queryLines": [
+        "SELECT department, item_volume, volume_share_pct, reorder_rate_pct,\n",
+        "       avg_days_between_orders, median_days_between_orders, orders, products_sold\n",
+        "FROM department_kpis"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "daily_total",
+      "displayName": "Daily demand (all departments)",
+      "queryLines": [
+        "SELECT ds, SUM(items) AS items, SUM(orders) AS orders\n",
+        "FROM department_daily_demand\n",
+        "GROUP BY ds"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "peak_hours",
+      "displayName": "Orders by hour",
+      "queryLines": [
+        "SELECT order_hour, total_orders, pct_of_total FROM peak_order_hours"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "basket",
+      "displayName": "Basket size by day",
+      "queryLines": [
+        "SELECT order_dow, day_name, avg_basket_size, total_orders\n",
+        "FROM basket_size_by_dow"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "dow_dept",
+      "displayName": "Department demand by day",
+      "queryLines": [
+        "SELECT department, order_dow, day_name, items FROM department_demand_by_dow"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "top_products",
+      "displayName": "Top products",
+      "queryLines": [
+        "SELECT department, `rank`, product_name, order_count\n",
+        "FROM top_products_by_department"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "forecast",
+      "displayName": "Forecast vs actual (hold-out)",
+      "queryLines": [
+        "SELECT ds, department, series, value\n",
+        "FROM forecast_eval\n",
+        "UNPIVOT (value FOR series IN (actual, xgboost, seasonal_naive))"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "metrics",
+      "displayName": "Forecast error",
+      "queryLines": [
+        "SELECT department, model,\n",
+        "       ROUND(mae, 1) AS mae, ROUND(rmse, 1) AS rmse, ROUND(mape, 1) AS mape_pct,\n",
+        "       CASE WHEN is_champion THEN 'yes' ELSE '' END AS champion, test_start, test_end\n",
+        "FROM forecast_metrics"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "anomalies_latest",
+      "displayName": "Latest anomaly check",
+      "queryLines": [
+        "SELECT department, ds, actual, ROUND(forecast, 1) AS forecast,\n",
+        "       ROUND(deviation_pct, 1) AS deviation_pct, severity, model\n",
+        "FROM demand_anomalies\n",
+        "WHERE is_latest"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "anomaly_counts",
+      "displayName": "Anomalies by severity",
+      "queryLines": [
+        "SELECT severity, COUNT(*) AS department_days\n",
+        "FROM demand_anomalies\n",
+        "GROUP BY severity"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "dq_latest",
+      "displayName": "Data-quality checks, latest run",
+      "queryLines": [
+        "SELECT stage, check_name, severity,\n",
+        "       CASE WHEN passed THEN 'PASS' WHEN severity = 'error' THEN 'FAIL' ELSE 'WARN' END AS status,\n",
+        "       observed, expected, details, checked_at\n",
+        "FROM dq_check_results\n",
+        "WHERE run_id = (SELECT max_by(run_id, checked_at) FROM dq_check_results)"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "dq_counters",
+      "displayName": "Data-quality summary, latest run",
+      "queryLines": [
+        "SELECT COUNT_IF(passed) AS passed_checks,\n",
+        "       COUNT(*) AS total_checks,\n",
+        "       COUNT_IF(NOT passed AND severity = 'error') AS blocking_failures,\n",
+        "       COUNT_IF(NOT passed AND severity = 'warn') AS warnings,\n",
+        "       MAX(checked_at) AS last_checked\n",
+        "FROM dq_check_results\n",
+        "WHERE run_id = (SELECT max_by(run_id, checked_at) FROM dq_check_results)"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "dq_history",
+      "displayName": "Data-quality history",
+      "queryLines": [
+        "WITH runs AS (\n",
+        "  SELECT run_id, MIN(checked_at) AS run_time FROM dq_check_results GROUP BY run_id\n",
+        ")\n",
+        "SELECT r.run_time,\n",
+        "       CASE WHEN c.passed THEN 'passed' WHEN c.severity = 'error' THEN 'failed' ELSE 'warning' END AS status,\n",
+        "       COUNT(*) AS checks\n",
+        "FROM dq_check_results c JOIN runs r USING (run_id)\n",
+        "GROUP BY r.run_time, status"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    },
+    {
+      "name": "quarantine",
+      "displayName": "Quarantined rows",
+      "queryLines": [
+        "SELECT entity, reason, `rows` FROM dq_quarantine_summary"
+      ],
+      "catalog": "workspace",
+      "schema": "demandiq_gold"
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# DemandIQ - grocery demand lakehouse",
+                "3.4M Instacart orders through bronze, silver and gold Delta tables. Dates on the time axis are *estimated* from each customer's real gaps between orders (the public data has no calendar dates); weekdays and gaps are measured."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_orders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "overview",
+                  "fields": [
+                    {
+                      "name": "total_orders",
+                      "expression": "`total_orders`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_orders",
+                  "displayName": "Orders"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Orders"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_lines",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "overview",
+                  "fields": [
+                    {
+                      "name": "total_order_lines",
+                      "expression": "`total_order_lines`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_order_lines",
+                  "displayName": "Items ordered"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Items ordered"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_customers",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "overview",
+                  "fields": [
+                    {
+                      "name": "total_customers",
+                      "expression": "`total_customers`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_customers",
+                  "displayName": "Customers"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Customers"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_reorder",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "overview",
+                  "fields": [
+                    {
+                      "name": "reorder_rate_pct",
+                      "expression": "`reorder_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "reorder_rate_pct",
+                  "displayName": "Reorder rate %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reorder rate %"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_basket",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "overview",
+                  "fields": [
+                    {
+                      "name": "avg_basket_size",
+                      "expression": "`avg_basket_size`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_basket_size",
+                  "displayName": "Avg basket size"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg basket size"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_products",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "overview",
+                  "fields": [
+                    {
+                      "name": "products_sold",
+                      "expression": "`products_sold`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "products_sold",
+                  "displayName": "Products sold"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Products sold"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w_daily",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_total",
+                  "fields": [
+                    {
+                      "name": "ds",
+                      "expression": "`ds`"
+                    },
+                    {
+                      "name": "items",
+                      "expression": "`items`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "ds",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date (estimated)",
+                  "axis": {
+                    "title": "Date (estimated)"
+                  }
+                },
+                "y": {
+                  "fieldName": "items",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Items",
+                  "axis": {
+                    "title": "Items"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Items ordered per day (estimated dates)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "w_share",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dept_kpis",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "volume_share_pct",
+                      "expression": "`volume_share_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "department",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Department",
+                  "axis": {
+                    "title": "Department"
+                  }
+                },
+                "y": {
+                  "fieldName": "volume_share_pct",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "% of items",
+                  "axis": {
+                    "title": "% of items"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Share of items by department"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 3,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "w_hours",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "peak_hours",
+                  "fields": [
+                    {
+                      "name": "order_hour",
+                      "expression": "`order_hour`"
+                    },
+                    {
+                      "name": "total_orders",
+                      "expression": "`total_orders`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_hour",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Hour of day",
+                  "axis": {
+                    "title": "Hour of day"
+                  }
+                },
+                "y": {
+                  "fieldName": "total_orders",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Orders",
+                  "axis": {
+                    "title": "Orders"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Orders by hour of day"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 10,
+            "width": 3,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "patterns",
+      "displayName": "Shopping patterns",
+      "layout": [
+        {
+          "widget": {
+            "name": "w_reorder",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dept_kpis",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "reorder_rate_pct",
+                      "expression": "`reorder_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "department",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Department",
+                  "axis": {
+                    "title": "Department"
+                  }
+                },
+                "y": {
+                  "fieldName": "reorder_rate_pct",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Reorder rate %",
+                  "axis": {
+                    "title": "Reorder rate %"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Reorder rate by department",
+                "showDescription": true,
+                "description": "Share of a department's items that the customer had bought before"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "w_basket",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "basket",
+                  "fields": [
+                    {
+                      "name": "day_name",
+                      "expression": "`day_name`"
+                    },
+                    {
+                      "name": "avg_basket_size",
+                      "expression": "`avg_basket_size`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "day_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Day (0 = Sunday assumed)",
+                  "axis": {
+                    "title": "Day (0 = Sunday assumed)"
+                  }
+                },
+                "y": {
+                  "fieldName": "avg_basket_size",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Items per order",
+                  "axis": {
+                    "title": "Items per order"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Average basket size by day"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "w_dow",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dow_dept",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "items",
+                      "expression": "`items`"
+                    },
+                    {
+                      "name": "day_name",
+                      "expression": "`day_name`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "department",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Department",
+                  "axis": {
+                    "title": "Department"
+                  }
+                },
+                "y": {
+                  "fieldName": "items",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Items",
+                  "axis": {
+                    "title": "Items"
+                  }
+                },
+                "color": {
+                  "fieldName": "day_name",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "day_name"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Department demand by day of week"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 6,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "t_gap",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dept_kpis",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "avg_days_between_orders",
+                      "expression": "`avg_days_between_orders`"
+                    },
+                    {
+                      "name": "median_days_between_orders",
+                      "expression": "`median_days_between_orders`"
+                    },
+                    {
+                      "name": "reorder_rate_pct",
+                      "expression": "`reorder_rate_pct`"
+                    },
+                    {
+                      "name": "products_sold",
+                      "expression": "`products_sold`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "department",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 0,
+                    "title": "Department",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "avg_days_between_orders",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 1,
+                    "title": "Avg days between orders",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "median_days_between_orders",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 2,
+                    "title": "Median days",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "reorder_rate_pct",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 3,
+                    "title": "Reorder rate %",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "products_sold",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 4,
+                    "title": "Products sold",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "0"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Reorder interval by department"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 3,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "t_top",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_products",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "rank",
+                      "expression": "`rank`"
+                    },
+                    {
+                      "name": "product_name",
+                      "expression": "`product_name`"
+                    },
+                    {
+                      "name": "order_count",
+                      "expression": "`order_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "department",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 0,
+                    "title": "Department",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "rank",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 1,
+                    "title": "Rank",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "0"
+                  },
+                  {
+                    "fieldName": "product_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 2,
+                    "title": "Product",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "order_count",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 3,
+                    "title": "Times ordered",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "0"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Top 3 products per department"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 15,
+            "width": 3,
+            "height": 9
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "forecast",
+      "displayName": "Forecast & anomalies",
+      "layout": [
+        {
+          "widget": {
+            "name": "f_department",
+            "queries": [
+              {
+                "name": "filter_forecast_department",
+                "query": {
+                  "datasetName": "forecast",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "department_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "department",
+                    "displayName": "Department",
+                    "queryName": "filter_forecast_department"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Department"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "forecast_note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "XGBoost (one model for all departments) vs a seasonal-naive baseline (same weekday last week), scored on the last 21 days. The run and the model are in MLflow; the winner is registered in Unity Catalog as `demand_forecaster@champion`."
+              ]
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "w_forecast",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "forecast",
+                  "fields": [
+                    {
+                      "name": "ds",
+                      "expression": "`ds`"
+                    },
+                    {
+                      "name": "value",
+                      "expression": "`value`"
+                    },
+                    {
+                      "name": "series",
+                      "expression": "`series`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "ds",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date (estimated)",
+                  "axis": {
+                    "title": "Date (estimated)"
+                  }
+                },
+                "y": {
+                  "fieldName": "value",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Items",
+                  "axis": {
+                    "title": "Items"
+                  }
+                },
+                "color": {
+                  "fieldName": "series",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "series"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Forecast vs actual, hold-out window"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "t_anomalies",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "anomalies_latest",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "ds",
+                      "expression": "`ds`"
+                    },
+                    {
+                      "name": "actual",
+                      "expression": "`actual`"
+                    },
+                    {
+                      "name": "forecast",
+                      "expression": "`forecast`"
+                    },
+                    {
+                      "name": "deviation_pct",
+                      "expression": "`deviation_pct`"
+                    },
+                    {
+                      "name": "severity",
+                      "expression": "`severity`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "department",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 0,
+                    "title": "Department",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "ds",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 1,
+                    "title": "Day",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "datetime",
+                    "displayAs": "datetime",
+                    "dateTimeFormat": "YYYY-MM-DD"
+                  },
+                  {
+                    "fieldName": "actual",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 2,
+                    "title": "Actual",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "0"
+                  },
+                  {
+                    "fieldName": "forecast",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 3,
+                    "title": "Forecast",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "deviation_pct",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 4,
+                    "title": "Deviation %",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "severity",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 5,
+                    "title": "Severity",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Latest day per department",
+                "showDescription": true,
+                "description": "LOW < 15% < MEDIUM < 25% < HIGH, same thresholds as the local anomaly check"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 4,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "p_severity",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "anomaly_counts",
+                  "fields": [
+                    {
+                      "name": "department_days",
+                      "expression": "`department_days`"
+                    },
+                    {
+                      "name": "severity",
+                      "expression": "`severity`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "department_days",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "department_days"
+                },
+                "color": {
+                  "fieldName": "severity",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "HIGH",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      },
+                      {
+                        "value": "MEDIUM",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 2
+                        }
+                      },
+                      {
+                        "value": "LOW",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 3
+                        }
+                      }
+                    ]
+                  },
+                  "displayName": "severity"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Hold-out department-days by severity"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 9,
+            "width": 2,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "t_metrics",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "metrics",
+                  "fields": [
+                    {
+                      "name": "department",
+                      "expression": "`department`"
+                    },
+                    {
+                      "name": "model",
+                      "expression": "`model`"
+                    },
+                    {
+                      "name": "mae",
+                      "expression": "`mae`"
+                    },
+                    {
+                      "name": "rmse",
+                      "expression": "`rmse`"
+                    },
+                    {
+                      "name": "mape_pct",
+                      "expression": "`mape_pct`"
+                    },
+                    {
+                      "name": "champion",
+                      "expression": "`champion`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "department",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 0,
+                    "title": "Department",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "model",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 1,
+                    "title": "Model",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "mae",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 2,
+                    "title": "MAE",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "rmse",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 3,
+                    "title": "RMSE",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "mape_pct",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 4,
+                    "title": "MAPE %",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "champion",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 5,
+                    "title": "Champion",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Forecast error by department ('ALL' = overall)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 6,
+            "height": 9
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    },
+    {
+      "name": "quality",
+      "displayName": "Data quality",
+      "layout": [
+        {
+          "widget": {
+            "name": "c_passed",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dq_counters",
+                  "fields": [
+                    {
+                      "name": "passed_checks",
+                      "expression": "`passed_checks`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "passed_checks",
+                  "displayName": "Checks passed"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Checks passed",
+                "showDescription": true,
+                "description": "latest run"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_total",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dq_counters",
+                  "fields": [
+                    {
+                      "name": "total_checks",
+                      "expression": "`total_checks`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_checks",
+                  "displayName": "Checks run"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Checks run",
+                "showDescription": true,
+                "description": "latest run"
+              }
+            }
+          },
+          "position": {
+            "x": 1,
+            "y": 0,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_blocking",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dq_counters",
+                  "fields": [
+                    {
+                      "name": "blocking_failures",
+                      "expression": "`blocking_failures`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "blocking_failures",
+                  "displayName": "Blocking failures",
+                  "style": {
+                    "rules": [
+                      {
+                        "condition": {
+                          "operand": {
+                            "type": "data-value",
+                            "value": "0"
+                          },
+                          "operator": ">"
+                        },
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Blocking failures",
+                "showDescription": true,
+                "description": "any > 0 stops the run before gold"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "c_warn",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dq_counters",
+                  "fields": [
+                    {
+                      "name": "warnings",
+                      "expression": "`warnings`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "warnings",
+                  "displayName": "Warnings"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Warnings",
+                "showDescription": true,
+                "description": "recorded, not blocking"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "dq_note",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Rows that break a rule never reach silver: they go to `silver.quarantine` with the reason. The checks below then test whole tables (row counts reconcile across layers, keys are unique, volume is plausible)."
+              ]
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "t_checks",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dq_latest",
+                  "fields": [
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    },
+                    {
+                      "name": "stage",
+                      "expression": "`stage`"
+                    },
+                    {
+                      "name": "check_name",
+                      "expression": "`check_name`"
+                    },
+                    {
+                      "name": "severity",
+                      "expression": "`severity`"
+                    },
+                    {
+                      "name": "observed",
+                      "expression": "`observed`"
+                    },
+                    {
+                      "name": "expected",
+                      "expression": "`expected`"
+                    },
+                    {
+                      "name": "details",
+                      "expression": "`details`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "status",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 0,
+                    "title": "Status",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "stage",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 1,
+                    "title": "Stage",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "check_name",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 2,
+                    "title": "Check",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "severity",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 3,
+                    "title": "Severity",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "observed",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 4,
+                    "title": "Observed",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "float",
+                    "displayAs": "number",
+                    "numberFormat": "0.00"
+                  },
+                  {
+                    "fieldName": "expected",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 5,
+                    "title": "Expected",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "details",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 6,
+                    "title": "Details",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Checks in the latest run"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 10
+          }
+        },
+        {
+          "widget": {
+            "name": "w_dq_history",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "dq_history",
+                  "fields": [
+                    {
+                      "name": "run_time",
+                      "expression": "`run_time`"
+                    },
+                    {
+                      "name": "checks",
+                      "expression": "`checks`"
+                    },
+                    {
+                      "name": "status",
+                      "expression": "`status`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "run_time",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Run",
+                  "axis": {
+                    "title": "Run"
+                  }
+                },
+                "y": {
+                  "fieldName": "checks",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Checks",
+                  "axis": {
+                    "title": "Checks"
+                  }
+                },
+                "color": {
+                  "fieldName": "status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "failed",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      },
+                      {
+                        "value": "warning",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 2
+                        }
+                      },
+                      {
+                        "value": "passed",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 3
+                        }
+                      }
+                    ]
+                  },
+                  "displayName": "status"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Check results per run"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "t_quarantine",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quarantine",
+                  "fields": [
+                    {
+                      "name": "entity",
+                      "expression": "`entity`"
+                    },
+                    {
+                      "name": "reason",
+                      "expression": "`reason`"
+                    },
+                    {
+                      "name": "rows",
+                      "expression": "`rows`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "entity",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 0,
+                    "title": "Entity",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "reason",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 1,
+                    "title": "Reason",
+                    "allowSearch": true,
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "string",
+                    "displayAs": "string"
+                  },
+                  {
+                    "fieldName": "rows",
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "imageHeight": "",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkOpenInNewTab": true,
+                    "visible": true,
+                    "order": 2,
+                    "title": "Rows",
+                    "allowSearch": false,
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "highlightLinks": false,
+                    "useMonospaceFont": false,
+                    "preserveWhitespace": false,
+                    "type": "integer",
+                    "displayAs": "number",
+                    "numberFormat": "0"
+                  }
+                ]
+              },
+              "invisibleColumns": [],
+              "allowHTMLByDefault": false,
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false,
+              "frame": {
+                "showTitle": true,
+                "title": "Quarantined rows (latest run)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 12,
+            "width": 2,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

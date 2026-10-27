@@ -2,8 +2,7 @@
 agent/agent.py
 
 Wires the three tools in agent/tools.py to a LangGraph ReAct agent running
-on Groq. This is the "LangGraph ReAct agent" referenced on the resume --
-LangGraph's create_react_agent is the standard, maintained
+on Groq. LangGraph's create_react_agent is the standard, maintained
 reason -> call-a-tool -> observe loop, rather than a hand-rolled one.
 
 Model choice: Groq deprecates and retires models on a rolling schedule

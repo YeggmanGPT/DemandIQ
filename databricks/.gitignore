@@ -1,0 +1,7 @@
+# Databricks CLI bundle state and local test/run output
+.databricks/
+mlruns/
+spark-warehouse/
+metastore_db/
+derby.log
+.pytest_cache/

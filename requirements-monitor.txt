@@ -1,0 +1,18 @@
+# Dependencies for the scheduled job only (.github/workflows/anomaly-check.yml).
+#
+# The monitor path (scheduler/monitor.py -> anomaly.py + agent/) never imports
+# prophet, xgboost, scikit-learn, streamlit or plotly, and prophet is the slowest
+# and most fragile package in requirements.txt to install. Keeping CI on this
+# shorter list makes the daily job faster and removes a way for it to fail.
+# For training, the dashboard or anything else, use requirements.txt.
+#
+# Ranges: the lower bound is the minor version this list was tested with; the
+# upper bound is the next major release, so a breaking release can't silently
+# break an unattended cron job. Raise the caps on purpose, after a test run.
+duckdb>=1.5,<2
+pandas>=3.0,<4
+requests>=2.34,<3
+python-dotenv>=1.2,<2
+langchain-core>=1.6,<2
+langchain-groq>=1.1,<2
+langgraph>=1.2,<2

@@ -1,0 +1,12 @@
+# AI/BI (SQL) dashboard over the gold tables, deployed with the job.
+# Changed the dashboard in the UI? Pull the changes back into git with:
+#   databricks bundle generate dashboard --resource demandiq_dashboard --force
+resources:
+  dashboards:
+    demandiq_dashboard:
+      display_name: DemandIQ - grocery demand lakehouse
+      file_path: ../dashboards/demandiq_lakehouse.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      # every dataset reads unqualified gold table names from here
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${var.schema_prefix}gold
