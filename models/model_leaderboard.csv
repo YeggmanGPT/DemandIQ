@@ -1,22 +1,22 @@
 department,prophet_rmse,prophet_mape,xgboost_rmse,xgboost_mape,champion,champion_rmse
-alcohol,20.32,51.4,147.38,1066.4,prophet,20.32
-babies,207.63,480.6,393.22,1052.5,prophet,207.63
-bakery,380.3,358.5,1103.03,1202.2,prophet,380.3
-beverages,833.8,379.3,2352.11,1287.5,prophet,833.8
-breakfast,241.79,483.6,634.62,1440.5,prophet,241.79
-bulk,21.24,332.4,27.88,470.1,prophet,21.24
-canned goods,241.76,325.4,1060.05,2553.6,prophet,241.76
-dairy eggs,1890.34,454.6,4514.54,1320.2,prophet,1890.34
-deli,313.73,263.1,965.6,890.8,prophet,313.73
-dry goods pasta,297.74,402.4,856.82,1382.2,prophet,297.74
-frozen,653.63,363.6,2096.93,1413.5,prophet,653.63
-household,189.6,288.8,751.49,1438.0,prophet,189.6
-international,114.16,442.2,319.71,1328.8,prophet,114.16
-meat seafood,195.75,353.4,716.7,1627.5,prophet,195.75
-missing,141.13,778.9,44.44,240.5,xgboost,44.44
-other,15.72,288.2,40.8,793.9,prophet,15.72
-pantry,578.59,278.0,1827.12,989.8,prophet,578.59
-personal care,156.97,457.9,489.17,1692.3,prophet,156.97
-pets,16.09,84.6,103.67,1325.1,prophet,16.09
-produce,4119.78,1249.9,8209.28,3047.1,prophet,4119.78
-snacks,1177.95,428.5,2519.13,1043.1,prophet,1177.95
+alcohol,70.21,16.0,49.32,11.3,xgboost,49.32
+babies,101.79,7.3,144.97,10.8,prophet,101.79
+bakery,170.28,4.6,418.21,11.6,prophet,170.28
+beverages,322.2,3.8,1027.42,12.6,prophet,322.2
+breakfast,113.01,5.3,209.08,9.7,prophet,113.01
+bulk,11.92,9.9,14.25,13.2,prophet,11.92
+canned goods,155.05,4.6,326.26,9.9,prophet,155.05
+dairy eggs,621.2,3.7,1467.92,8.6,prophet,621.2
+deli,172.37,5.3,366.19,12.2,prophet,172.37
+dry goods pasta,162.76,6.0,325.18,13.3,prophet,162.76
+frozen,382.61,5.9,666.66,9.9,prophet,382.61
+household,181.56,8.1,309.93,14.2,prophet,181.56
+international,45.7,5.3,74.73,9.7,prophet,45.7
+meat seafood,105.75,5.1,304.78,15.0,prophet,105.75
+missing,35.64,17.0,15.9,6.7,xgboost,15.9
+other,9.1,8.3,23.77,24.6,prophet,9.1
+pantry,296.51,5.2,523.58,9.7,prophet,296.51
+personal care,96.15,6.7,191.18,15.0,prophet,96.15
+pets,32.75,8.9,65.53,22.5,prophet,32.75
+produce,1165.34,4.2,2411.9,8.3,prophet,1165.34
+snacks,432.01,5.0,747.88,8.6,prophet,432.01

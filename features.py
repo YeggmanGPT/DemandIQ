@@ -37,6 +37,9 @@ DB_PATH = os.path.join("db", "demandiq.duckdb")
 SIM_START = "2024-01-01"
 ANCHOR_WINDOW_DAYS = 90
 RANDOM_SEED = 42
+# Days whose 7-day-smoothed total demand is below this share of the peak are
+# reconstruction artefacts (ramp-up / fade-out), not demand -- see trim_to_steady_state.
+STEADY_STATE_MIN_SHARE = 0.5
 
 
 def build_order_dates(conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
@@ -99,6 +102,31 @@ def build_daily_department_demand(conn: duckdb.DuckDBPyConnection) -> pd.DataFra
     return daily
 
 
+def trim_to_steady_state(daily: pd.DataFrame, min_share: float = STEADY_STATE_MIN_SHARE) -> pd.DataFrame:
+    """Keeps only the days where total demand is at least ``min_share`` of its peak.
+
+    The date reconstruction creates two artificial periods: a ramp-up while
+    users' anchor dates spread over the first ANCHOR_WINDOW_DAYS, and a long
+    fade-out as users' order histories run out one by one. Neither is real
+    demand. Without this trim the forecaster's hold-out (the last 20% of days)
+    falls inside the fade-out, actual demand there is close to zero, and the
+    anomaly scan flags every department at ~99% deviation. The Databricks
+    version applies the same rule (databricks/.../forecast.py,
+    steady_state_window).
+    """
+    total = daily.groupby("ds")["y"].sum().sort_index()
+    smooth = total.rolling(7, center=True, min_periods=1).mean()
+    keep = smooth[smooth >= min_share * smooth.max()]
+    start, end = keep.index.min(), keep.index.max()
+    trimmed = daily[(daily["ds"] >= start) & (daily["ds"] <= end)].reset_index(drop=True)
+    print(
+        f"Steady-state window: {start.date()} to {end.date()} "
+        f"({(end - start).days + 1} days; days below {min_share:.0%} of peak volume dropped, "
+        f"{len(daily) - len(trimmed):,} of {len(daily):,} rows)"
+    )
+    return trimmed
+
+
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """Adds lag, rolling-window, and calendar features per department."""
     df = df.sort_values(["department", "ds"]).reset_index(drop=True)
@@ -144,6 +172,7 @@ def save_features(conn: duckdb.DuckDBPyConnection, df: pd.DataFrame) -> None:
 if __name__ == "__main__":
     conn = duckdb.connect(DB_PATH)
     raw_daily = build_daily_department_demand(conn)
-    features = engineer_features(raw_daily)
+    steady = trim_to_steady_state(raw_daily)
+    features = engineer_features(steady)
     save_features(conn, features)
     conn.close()
